@@ -1,0 +1,38 @@
+# ESP32 Smart Kallax
+
+This ESP32 platformIO project is meant to manage the mm Wave sensor LD2411s and a PWM 12V output in order to light a wardrobe when presence is detected, with integration to Home Assistant
+
+## Features
+
+- MQTT client support
+- Motion detection
+- soft turn on and turn off the led strip
+- integration with Home Assistant
+
+## Usage
+
+This project needs the complementary libraries that can be found [here](https://github.com/eeyteo/ESP32_custom_libs).
+Add the needed reference in platformio.ini
+```xml
+lib_extra_dirs = ..\PlatformIO\Libs
+```
+You can find more detailed information (and the fabricazion files) on my [website](https://cortimatteo.it) and a step by step guide on the [video tutorial]().
+
+You'll need to add config.h file with the defines
+
+```xml
+#pragma once
+#define SSID "your ssid"
+#define PASSWORD "your passwprd"
+```
+
+## Hardware
+1. ESP32 development board is needed.
+2. LM25T5-5 for generating 5v
+3. IRLZ44N forr driving the logic level mosfet
+4. LD2411s for detecting.
+5. custom PCB
+
+## License
+
+MIT License
