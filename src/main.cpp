@@ -32,8 +32,6 @@ const char* mqtt_server = "192.168.1.146";  // your Home Assistant broker
 
 const char* mqtt_client_id  ="gym_sensor_01"; // client id for MQTT
 
-// put function declarations here:
-int myFunction(int, int);
 
 void setup() {
   // put your setup code here, to run once:
@@ -44,7 +42,7 @@ void setup() {
 
   int attempts = 0;
 
-  IPAddress local_IP(192, 168, 1, 187); // Set your desired static IP address
+  IPAddress local_IP(192, 168, 1, 53); // Set your desired static IP address
   IPAddress gateway(192, 168, 1, 1);    // Replace with your network gateway
   IPAddress subnet(255, 255, 255, 0);   // Replace with your subnet mask
   IPAddress dns(8, 8, 8, 8); // Google's public DNS server

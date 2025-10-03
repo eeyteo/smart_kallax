@@ -1,6 +1,8 @@
 #ifndef LED_CONTROL_H
 #define LED_CONTROL_H
 #include <Arduino.h>
+#include "esp_timer.h"
+
 
 struct ledStrip{
     u_int8_t pwm_channel;
@@ -13,7 +15,7 @@ struct ledStrip{
     u_int8_t min_duty;
     u_int8_t start_duty;
     u_int16_t time_fade;
-    u_int16_t fade_start_time;
+    int64_t fade_start_time;
     float m;
     bool fading;
     bool state;
@@ -37,7 +39,7 @@ struct ledStrip{
     void startFadeIn() {
         target_duty = max_duty;
         start_duty = duty;
-        fade_start_time = millis();
+        fade_start_time = esp_timer_get_time();
         fading = true;
         state = true;
     }
@@ -45,7 +47,7 @@ struct ledStrip{
     void startFadeOut() {
         target_duty = min_duty;
         start_duty = duty;
-        fade_start_time = millis();
+        fade_start_time = esp_timer_get_time();
         fading = true;
         state = false;
     }
@@ -54,19 +56,40 @@ struct ledStrip{
         char buffer[50];
          
         if (fading) {
-            unsigned long current_time = millis();
-            unsigned long elapsed_time = current_time - fade_start_time;
+            // Use 64-bit timer for start/current time
+            int64_t current_time_us = esp_timer_get_time(); 
             
+            // Elapsed time is also 64-bit, calculated in microseconds
+            int64_t elapsed_time_us = current_time_us - fade_start_time;
+            
+            // Convert to milliseconds to use with your existing 'm' (rate of change)
+            unsigned long elapsed_time_ms = elapsed_time_us / 1000; 
+            int32_t new_duty;
+
             if (target_duty > duty) { // fading in
-                duty = start_duty + m * elapsed_time;
+                new_duty = start_duty + m * elapsed_time_ms;
+                if (new_duty >= target_duty) {
+                    duty = target_duty;
+                    fading = false;
+                } else {
+                    duty = (u_int8_t)new_duty; // Cast back to u_int8_t
+                }
             } else if(target_duty < duty) { // fading out
-                duty = start_duty - m * elapsed_time;   
+                new_duty = start_duty - m * elapsed_time_ms;
+                if (new_duty <= target_duty) {
+                    duty = target_duty;
+                    fading = false;
+                } else {
+                    duty = (u_int8_t)new_duty; // Cast back to u_int8_t
+                }
             } else fading = false; // reached target
-            if(fading){
+
+            if(fading || (duty == target_duty)){
                 snprintf(buffer, sizeof(buffer), "Duty: %d, Target: %d", duty, target_duty);
                 //Serial.println(buffer);      
+                ledcWrite(pwm_channel, duty);
             }
-            ledcWrite(pwm_channel, duty);
+            
         }    
     }
 };
