@@ -1,12 +1,13 @@
 # ESP32 Smart Kallax
 
-A ESP32 based platformIO project for managing motion detection via mm wave sensor and controlling a 12V
+A ESP32 development board, platformIO based, using a custom PCB project.
+This board will manage motion detection via mm wave sensor and control a 12V
 output such as a led strip, intended to be mounted on a wardrobe.
 
 ## Features
 
 - MQTT client support
-- Soft turn on and turn off
+- Soft turn on and turn off of a led strip
 - mmWave LD2411S sensor support
 - integration with Home Assistant
 
@@ -27,6 +28,7 @@ Add in folder src a config.h file with
 You can find fabrication files on [my website](https://cortimatteo.it) and a video step by step guide [here](https://youtu.be/v1Ju4GubdEQ)
 
 ## Hardware
+
 1. LM2575-5 for generating 5V line
 2. IRLZ44N for managing the led strip
 3. ESP32 development board
