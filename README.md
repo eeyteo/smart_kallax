@@ -1,24 +1,25 @@
 # ESP32 Smart Kallax
 
-A ESP32 development board, platformIO based, using a custom PCB project.
-This board will manage motion detection via mm wave sensor and control a 12V
-output such as a led strip, intended to be mounted on a wardrobe.
+Firmware for managing a cusom PCB, based on a ESP32 development boar.
+This board will manage motion detection from a mm wave sensor and will
+control a 12V output such as a led strip.
+This is a platformIO based project.
 
 ## Features
 
 - MQTT client support
-- Soft turn on and turn off of a led strip
+- Soft turn on and turn off of a led output
 - mmWave LD2411S sensor support
-- integration with Home Assistant
+- integration with Home Assistant (get/set)
 
 ## Usage
 
-Include the libraries from this [complementary repository](https://github.com/eeyteo/ESP32_custom_libs), in the platformIO.ini file
+Include the complmentary libraries from this [complementary repository](https://github.com/eeyteo/ESP32_custom_libs), in the platformIO.ini file
 
 ```xml
 lib_extra_dirs = ..\PlatformIO\Libs
 ```
-Add in folder src a config.h file with
+Add in folder src a config.h file with sensible information
 ```xml
 #pragma once
 #define SSID "your ssid"

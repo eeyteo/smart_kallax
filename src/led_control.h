@@ -18,9 +18,10 @@ struct ledStrip{
     int64_t fade_start_time;
     float m;
     bool fading;
+    bool pulsing;
     bool state;
     //default constructor
-    ledStrip() : pwm_channel(0), led_pin(0), pwm_freq(5000), pwm_res(8), duty(0), target_duty(0), max_duty(255), min_duty(0), start_duty(0), time_fade(1000), fade_start_time(0), m(0.0), fading(false), state(false) {}
+    ledStrip() : pwm_channel(0), led_pin(0), pwm_freq(5000), pwm_res(8), duty(0), target_duty(0), max_duty(255), min_duty(0), start_duty(0), time_fade(1000), fade_start_time(0), m(0.0), fading(false), pulsing(false), state(false) {}
 
     void begin(int PWM_CHANNEL, int LED_PIN, int PWM_FREQ, int PWM_RES) {
         pwm_channel = PWM_CHANNEL;
@@ -52,7 +53,18 @@ struct ledStrip{
         state = false;
     }
 
-    void manageLed() { // This method brings duty to target duty with a fade effect
+    void managePulse() {
+        // Implement the pulse logic
+        if(pulsing && !fading) { // if pulsing is active and not currently fading
+            if (state) {
+                startFadeOut();
+            } else {
+                startFadeIn();
+            }
+        }
+    }
+  
+    void manageLed() { // This method brings duty to target duty with a fade or pulse effect
         char buffer[50];
          
         if (fading) {
@@ -89,8 +101,8 @@ struct ledStrip{
                 //Serial.println(buffer);      
                 ledcWrite(pwm_channel, duty);
             }
-            
-        }    
+        }
+         
     }
 };
 
