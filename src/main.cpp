@@ -2,7 +2,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include "mmwave.h"
-#include "mqtt.h"
 #include "led_control.h"
 #include <Arduino.h>
 #include "config.h"
@@ -10,23 +9,18 @@
 #include "serial_com.h"
 #include "countTime.h"
 #include "esp_timer.h"
+#include <HTTPClient.h>
+#include "node_config.h"
 
 #define INTERVAL_MS 100
-// Prototypes
-void setupMQTT(PubSubClient &mqttClient);
+#define HA_SERVER "192.168.1.146"
 
 // Node Variable
-const char* mqtt_server = "192.168.1.146";  // your Home Assistant broker
-const char* mqtt_client_id  ="livingroom_sensor_01"; // client id for MQTT
 const bool led_present = true; // set to true if an led strip is connected to the board
 
-const int LED_PIN = 32;
-const int PWM_CHANNEL = 0;
-const int PWM_FREQ = 5000;   // 5 kHz
-const int PWM_RES = 8;       // 8-bit resolution (0..255)
 
 bool manualMode = false; 
-bool ledState = false; // used in manual mode to store the desired led state
+bool ledState = false, lastLedState = false; // used in manual mode to store the desired led state
 bool notified = false;
 String macAddress = "";
 String ssid = SSID;
@@ -37,13 +31,33 @@ HardwareSerial ld2411Serial(2); // use UART2
 
 mmWaveSensor mmWave; // instance of mmWaveSensor
 ledStrip myLedStrip; // instance of ledStrip
-WiFiClient espClient;       // <-- needed by PubSubClient
-PubSubClient mqttClient(espClient);
+WiFiClient espClient;      
+
+HTTPClient http;
 
 int64_t current_time = 0, old_time = 0;
 
+
+//Function prototypes
+void updateInputBoolean(String entity_id, bool state);
+String buildEntityId(String entity_type, String entity_name = "");
+String buildHAService(String service_type, String entity_id, String state);
+void handleNotFound(); 
+void handleRoot(); 
+void handleCommand(); 
+void setupWebServer();
+
+
 void setup() {
   Serial.begin(115200);
+
+  // Print node info
+    Serial.println("========================================");
+    Serial.println("Node: " + String(NODE_DISPLAY_NAME));
+    Serial.println("ID: " + String(NODE_NAME));
+    Serial.println("========================================");
+
+
   int uartIndex = -1;
   int gpio = 16; // default GPIO for mmWave UART RX
   // Initialize LED strip if the led strip is present
@@ -65,10 +79,10 @@ void setup() {
   int attempts = 0;
    
   // Connect to Wi-Fi
-  IPAddress local_IP(192, 168, 1, 61); // Set your desired static IP address
+  IPAddress local_IP(192, 168, 1, 62);  // Set your desired static IP address
   IPAddress gateway(192, 168, 1, 1);    // Replace with your network gateway
   IPAddress subnet(255, 255, 255, 0);   // Replace with your subnet mask
-  IPAddress dns(8, 8, 8, 8); // Google's public DNS server
+  IPAddress dns(8, 8, 8, 8);            // Google's public DNS server
 
   if (!WiFi.config(local_IP, gateway, subnet, dns)) {
     Serial.println("Failed to configure static IP");
@@ -81,25 +95,15 @@ void setup() {
   }
   
   if (ssid == "" || WiFi.status() != WL_CONNECTED) {
-    // failed connection
+    // Failed connection
     Serial.println("failed to connect to WiFi.");
   } else {
     // Wi-Fi credentials available and connection successful
     macAddress = WiFi.macAddress();
     Serial.println("Device " + macAddress + " connected at "  + WiFi.localIP().toString() + " . RSSI: " + String(WiFi.RSSI()) + "dBm");  
+    setupWebServer(); // Setup web server routes
     is_online = true;
-    // Setup MQTT
-    mqttClient.setServer(mqtt_server, 1883);
-    
-    // Connect to MQTT broker
-    if (!mqttClient.connected()) {
-      reconnect_mqtt(mqttClient, mqtt_client_id);
-    }
-    // Setup MQTT
-    setupMQTT(mqttClient);
-
   }
-
 }
 
 void loop() {
@@ -110,123 +114,133 @@ void loop() {
     // Count time
     countDown(mmWave.t, notified);
 
-    // Detect changes in manual_mode
-    if(manualMode != old_manualMode){
-      Serial.println("Detected change in operative mode");
-      if(manualMode) mqttClient.publish("home/livingroom/sensor_mode/state", "manual", true);
-      else mqttClient.publish("home/livingroom/sensor_mode/state", "auto", true);
-      old_manualMode = manualMode;
-    }
-    
+    listenGet(mmWave); // Listen to serial commands
     listenMMwave(mmWave); // Continuously listen to mmWave data
     static bool oldPresence = false;
-
-    // Handle MQTT connection
-    if (!mqttClient.connected()) {
-      Serial.println("Lost connection to MQTT. Reconnecting to MQTT...");
-      reconnect_mqtt(mqttClient, mqtt_client_id);
-    }
-    mqttClient.loop(); // process incoming messages and maintain connection
     
-    if(!manualMode){ // automatic mode
-      if(mmWave.presenceDetected != oldPresence ){
-        Serial.println("Turning the led " + String(mmWave.presenceDetected ? "ON" : "OFF"));
-        if(mmWave.presenceDetected){
-          myLedStrip.startFadeIn(); // turn on the led
-          mqttClient.publish("home/livingroom/led/state", "ON", true);
-        } else {
-          myLedStrip.startFadeOut(); // turn off the led
-          mqttClient.publish("home/livingroom/led/state", "OFF", true);
-        } 
-        mqttClient.publish("home/livingroom/ld2411_motion", mmWave.presenceDetected ? "ON" : "OFF", true);
-        oldPresence = mmWave.presenceDetected;
-      }
-    }else{ // manual mode
-      if(ledState != myLedStrip.state){
-        Serial.println("Manual mode: Turning the led " + String(ledState ? "ON" : "OFF"));
-        if(ledState){
-          myLedStrip.startFadeIn(); // turn on the led
-          mqttClient.publish("home/livingroom/led/state", "ON", true);
-        } else {
-          myLedStrip.startFadeOut(); // turn off the led
-          mqttClient.publish("home/livingroom/led/state", "OFF", true);
-        }
+     // Auto mode: control LED based on presence
+    if (!manualMode) {
+      if (mmWave.presenceDetected && myLedStrip.canFadeIn()) {
+        myLedStrip.machine_state = 1; // start fade in
+        updateInputBoolean(buildEntityId("input_boolean", "motion_state"), 
+                      mmWave.presenceDetected);
+        Serial.println("Auto mode: Presence detected, turning LED ON");
+      } else if(!mmWave.presenceDetected && myLedStrip.canFadeOut()) {
+        myLedStrip.machine_state = 3; // start fade out
+        updateInputBoolean(buildEntityId("input_boolean", "motion_state"), 
+                      mmWave.presenceDetected);
+        Serial.println("Auto mode: No presence, turning LED OFF");
       }
     }
-    if(led_present) myLedStrip.manageLed(); // manage the led fading if the led is present
+    
+    // Manual mode: update LED state if changed
+    if (manualMode && ledState != lastLedState) {
+      Serial.println("Manual mode: Turning LED " + String(ledState ? "ON" : "OFF"));
+      if (ledState && myLedStrip.canFadeIn()) {
+        myLedStrip.machine_state = 1;
+      } else if(!ledState && myLedStrip.canFadeOut()) {
+        myLedStrip.machine_state = 3;
+      }
+      lastLedState = ledState;
+    }
+
+    if(led_present) manageLed(myLedStrip); // manage the led fading if the led is present
+    server.handleClient();
   } 
 }
 
 
-void setupMQTT(PubSubClient &mqttClient) {
-  // This function sets up MQTT subscriptions and callbacks
-  // It is called once after connecting to the broker
+void updateInputBoolean(String entity_id, bool state) {
+  if (!is_online || WiFi.status() != WL_CONNECTED) return;
 
-  // Define the callback function to handle incoming messages
-  mqttClient.setCallback([&mqttClient](char* topic, byte* payload, unsigned int length) {
-    String message;
-    bool led_state = false;
-    for (int i = 0; i < length; i++) {
-      message += (char)payload[i];
-    }
+  // Use the service API, not states API
+  String url = "http://" + String(HA_SERVER) + ":8123/api/services/input_boolean/turn_" + 
+               String(state ? "on" : "off");
+  
+  String payload = "{\"entity_id\": \"" + entity_id + "\"}";
+  
+  http.begin(espClient, url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", "Bearer " + String(TOKEN));
+  
+  int httpCode = http.POST(payload);  // Use POST for services!
+  
+  if (httpCode == 200) {
+    Serial.println("✓ " + entity_id + " set to " + String(state ? "ON" : "OFF"));
+  } else {
+    Serial.println("✗ Failed: " + String(httpCode) + " for " + entity_id);
+  }
+  
+  http.end();
+}
 
-    if (String(topic) == "home/livingroom/sensor_mode/set") {
-      if (message == "manual") {
-        manualMode = true;
-        mqttClient.publish("home/livingroom/sensor_mode/state", "manual", true);
-      } else if (message == "auto") {
-        manualMode = false;
-        mqttClient.publish("home/livingroom/sensor_mode/state", "auto", true);
-      }
-    }else if (String(topic) == "home/livingroom/led/set") {
-      if (manualMode) {
-        ledState = (message == "ON");
-        mqttClient.publish("home/livingroom/led/state", ledState ? "ON" : "OFF", true);
-      }
-    }else if (String(topic) == "home/livingroom/maxMotionRange/set") {
-        mmWave.maxMotionRange.value = message.toInt();
-        mqttClient.publish("home/livingroom/maxMotionRange/state", message.c_str(), true);
+void handleNotFound() {
+  server.send(404, "application/json", "{\"status\":\"error\",\"message\":\"Not found\"}");
+}
+
+void handleRoot() {
+  server.send(200, "text/plain", "Living Room Sensor Running");
+}
+
+void handleCommand() {
+  if (server.method() == HTTP_POST) {
+    String command = server.arg("command");
+    String value = server.arg("value");
+    
+    Serial.println("Received command: " + command + " = " + value);
+    
+    if (command == "mode") {
+      manualMode = (value == "manual");
+      server.send(200, "text/plain", "OK");
+    } else if (command == "led") {
+      ledState = (value == "on");
+      server.send(200, "text/plain", "OK");
+    } else if (command == "param") {
+      // Handle parameter changes
+      String param = server.arg("param");
+      int intValue = value.toInt();
+      if(param == "maxMotionRange"){
+        Serial.println("Setting maxMotionRange to " + String(intValue));
+        mmWave.maxMotionRange.value = intValue;
         setMaxMotionRange(mmWave, mmWave.maxMotionRange.value);
-        mmWave.showParam();
-    }else if (String(topic) == "home/livingroom/minMotionRange/set") {
-        mmWave.minMotionRange.value = message.toInt();
-        mqttClient.publish("home/livingroom/minMotionRange/state", message.c_str(), true);
+      }else if(param == "minMotionRange"){
+        Serial.println("Setting minMotionRange to " + String(intValue));
+        mmWave.minMotionRange.value = intValue;
         setMinMotionRange(mmWave, mmWave.minMotionRange.value);
-        mmWave.showParam();
-    }else if (String(topic) == "home/livingroom/maxMicroMotionRange/set") {
-        mmWave.maxMicroMotionRange.value = message.toInt();
-        mqttClient.publish("home/livingroom/maxMicroMotionRange/state", message.c_str(), true);
+      } else if(param == "maxMicroMotionRange") {
+        Serial.println("Setting maxMicroMotionRange to " + String(intValue));
+        mmWave.maxMicroMotionRange.value = intValue;
         setMaxMicroMotionRange(mmWave, mmWave.maxMicroMotionRange.value);
-        mmWave.showParam();
-    }else if (String(topic) == "home/livingroom/minMicroMotionRange/set") {
-        mmWave.minMicroMotionRange.value = message.toInt();
-        mqttClient.publish("home/livingroom/minMicroMotionRange/state", message.c_str(), true);
+      } else if(param == "minMicroMotionRange") {
+        Serial.println("Setting minMicroMotionRange to " + String(intValue));
+        mmWave.minMicroMotionRange.value = intValue;
         setMinMicroMotionRange(mmWave, mmWave.minMicroMotionRange.value);
-        mmWave.showParam();
-    }else if (String(topic) == "home/livingroom/noOneWaitingTime/set") {
-        mmWave.noOneWaitingTime.value = message.toInt();
-        mqttClient.publish("home/livingroom/noOneWaitingTime/state", message.c_str(), true);
+      }else if(param == "noOneWaitingTime") {
+        Serial.println("Setting noOneWaitingTime to " + String(intValue));
+        mmWave.noOneWaitingTime.value = intValue;
         setNoOneWaitingTime(mmWave, mmWave.noOneWaitingTime.value);
-        mmWave.showParam();
+      }
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(400, "text/plain", "Unknown command");
     }
+  }
+}
 
-  });
 
-  // Subscribe to topics
-  mqttClient.subscribe("home/livingroom/sensor_mode/set");
-  mqttClient.subscribe("home/livingroom/led/set");
-  mqttClient.subscribe("home/livingroom/maxMotionRange/set");
-  mqttClient.subscribe("home/livingroom/minMotionRange/set");
-  mqttClient.subscribe("home/livingroom/maxMicroMotionRange/set");
-  mqttClient.subscribe("home/livingroom/minMicroMotionRange/set");
-  mqttClient.subscribe("home/livingroom/noOneWaitingTime/set");
+void setupWebServer() {
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/command", HTTP_POST, handleCommand);
+  server.onNotFound(handleNotFound);
+  server.begin();
+  Serial.println("HTTP server started on port 80");
+  Serial.println("Access it at: http://" + WiFi.localIP().toString());
+}
 
-  // Publish states
-  mqttClient.publish("home/livingroom/sensor_mode/state", manualMode ? "manual" : "auto", true);
-  mqttClient.publish("home/livingroom/led/state", ledState ? "ON" : "OFF", true);
-  mqttClient.publish("home/livingroom/maxMotionRange/state", String(mmWave.maxMotionRange.value).c_str(), true);
-  mqttClient.publish("home/livingroom/minMotionRange/state", String(mmWave.minMotionRange.value).c_str(), true);
-  mqttClient.publish("home/livingroom/maxMicroMotionRange/state", String(mmWave.maxMicroMotionRange.value).c_str(), true);
-  mqttClient.publish("home/livingroom/minMicroMotionRange/state", String(mmWave.minMicroMotionRange.value).c_str(), true);
-  mqttClient.publish("home/livingroom/noOneWaitingTime/state", String(mmWave.noOneWaitingTime.value).c_str(), true);
+
+String buildEntityId(String entity_type, String entity_name) {
+    if (entity_name.length() > 0) {
+        return entity_type + "." + String(NODE_NAME) + "_" + entity_name;
+    }
+    return entity_type + "." + String(NODE_NAME);
 }
