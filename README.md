@@ -7,7 +7,6 @@ This is a platformIO based project.
 
 ## Features
 
-- MQTT client support
 - Soft turn on and turn off of a led output
 - mmWave LD2411S sensor support
 - integration with Home Assistant (get/set)
@@ -19,12 +18,16 @@ Include the complmentary libraries from this [complementary repository](https://
 ```xml
 lib_extra_dirs = ..\PlatformIO\Libs
 ```
-Add in folder src a config.h file with sensible information
+Add in folder src a `config.h` file with sensible information
 ```xml
 #pragma once
 #define SSID "your ssid"
 #define PASSWORD "your password"
+#define HA_SERVER "your HA server ip address"
+#define NODE_IP "your node intended static ip address"
+#define DEFAULT_GATEWAY "your network default gateway"
 ```
+The other configuration file is `node_config.h`, here you'll specify the node name and the hardware configuration.
 
 You can find fabrication files on [my website](https://cortimatteo.it) and a video step by step guide [here](https://youtu.be/v1Ju4GubdEQ)
 

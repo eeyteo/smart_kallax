@@ -11,9 +11,16 @@
 #include "esp_timer.h"
 #include <HTTPClient.h>
 #include "node_config.h"
+#include "rest_api.h"
+#include "inputs.h"
 
 #define INTERVAL_MS 100
-#define HA_SERVER "192.168.1.146"
+
+// Inputs
+InputObj redButton("red_button", RED_BTN, 0, 0, false, 500);
+InputObj greenButton("green_button", GREEN_BTN, 0, 1, false, 500);
+InputObj blueButton("blue_button", BLUE_BTN, 0, 2, false, 500);
+InputObj whiteButton("white_button", WHITE_BTN, 0, 3, false, 500);
 
 // Node Variable
 const bool led_present = true; // set to true if an led strip is connected to the board
@@ -39,9 +46,7 @@ int64_t current_time = 0, old_time = 0;
 
 
 //Function prototypes
-void updateInputBoolean(String entity_id, bool state);
-String buildEntityId(String entity_type, String entity_name = "");
-String buildHAService(String service_type, String entity_id, String state);
+
 void handleNotFound(); 
 void handleRoot(); 
 void handleCommand(); 
@@ -77,10 +82,20 @@ void setup() {
   Serial.printf("Initialized mmWave sensor with UART%d (RX:%d, TX:%d)\n", 
               uartIndex + 1, gpio, gpio + 1);
   int attempts = 0;
-   
+  
+  // Setup inputs
+  setupInputs(redButton, greenButton, blueButton, whiteButton);
+
   // Connect to Wi-Fi
-  IPAddress local_IP(192, 168, 1, 62);  // Set your desired static IP address
-  IPAddress gateway(192, 168, 1, 1);    // Replace with your network gateway
+  IPAddress local_IP;
+  IPAddress gateway;
+  int a, b, c, d, e, f, g, h;  // use int for sscanf
+    if (sscanf(NODE_IP, "%d.%d.%d.%d", &a, &b, &c, &d) == 4) {
+        local_IP = IPAddress((uint8_t)a, (uint8_t)b, (uint8_t)c, (uint8_t)d);
+    }
+    if (sscanf(DEFAULT_GATEWAY, "%d.%d.%d.%d", &e, &f, &g, &h) == 4) {
+        gateway = IPAddress((uint8_t)e, (uint8_t)f, (uint8_t)g, (uint8_t)h);
+    }
   IPAddress subnet(255, 255, 255, 0);   // Replace with your subnet mask
   IPAddress dns(8, 8, 8, 8);            // Google's public DNS server
 
@@ -114,21 +129,25 @@ void loop() {
     // Count time
     countDown(mmWave.t, notified);
 
+
+    // Update inputs
+    updateInputs(is_online, espClient, http, redButton, greenButton, blueButton, whiteButton);
+    
     listenGet(mmWave); // Listen to serial commands
     listenMMwave(mmWave); // Continuously listen to mmWave data
     static bool oldPresence = false;
     
-     // Auto mode: control LED based on presence
+    // Auto mode: control LED based on presence
     if (!manualMode) {
       if (mmWave.presenceDetected && myLedStrip.canFadeIn()) {
         myLedStrip.machine_state = 1; // start fade in
         updateInputBoolean(buildEntityId("input_boolean", "motion_state"), 
-                      mmWave.presenceDetected);
+                      mmWave.presenceDetected, is_online, espClient, http);
         Serial.println("Auto mode: Presence detected, turning LED ON");
       } else if(!mmWave.presenceDetected && myLedStrip.canFadeOut()) {
         myLedStrip.machine_state = 3; // start fade out
         updateInputBoolean(buildEntityId("input_boolean", "motion_state"), 
-                      mmWave.presenceDetected);
+                      mmWave.presenceDetected, is_online, espClient, http);
         Serial.println("Auto mode: No presence, turning LED OFF");
       }
     }
@@ -150,29 +169,6 @@ void loop() {
 }
 
 
-void updateInputBoolean(String entity_id, bool state) {
-  if (!is_online || WiFi.status() != WL_CONNECTED) return;
-
-  // Use the service API, not states API
-  String url = "http://" + String(HA_SERVER) + ":8123/api/services/input_boolean/turn_" + 
-               String(state ? "on" : "off");
-  
-  String payload = "{\"entity_id\": \"" + entity_id + "\"}";
-  
-  http.begin(espClient, url);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", "Bearer " + String(TOKEN));
-  
-  int httpCode = http.POST(payload);  // Use POST for services!
-  
-  if (httpCode == 200) {
-    Serial.println("✓ " + entity_id + " set to " + String(state ? "ON" : "OFF"));
-  } else {
-    Serial.println("✗ Failed: " + String(httpCode) + " for " + entity_id);
-  }
-  
-  http.end();
-}
 
 void handleNotFound() {
   server.send(404, "application/json", "{\"status\":\"error\",\"message\":\"Not found\"}");
@@ -183,6 +179,7 @@ void handleRoot() {
 }
 
 void handleCommand() {
+  // This endpoint handles commands sent from Home Assistant to control the node
   if (server.method() == HTTP_POST) {
     String command = server.arg("command");
     String value = server.arg("value");
@@ -229,6 +226,7 @@ void handleCommand() {
 
 
 void setupWebServer() {
+  // This function sets up the web server routes for handling incoming HTTP requests
   server.on("/", HTTP_GET, handleRoot);
   server.on("/command", HTTP_POST, handleCommand);
   server.onNotFound(handleNotFound);
@@ -238,9 +236,3 @@ void setupWebServer() {
 }
 
 
-String buildEntityId(String entity_type, String entity_name) {
-    if (entity_name.length() > 0) {
-        return entity_type + "." + String(NODE_NAME) + "_" + entity_name;
-    }
-    return entity_type + "." + String(NODE_NAME);
-}
