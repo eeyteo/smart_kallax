@@ -19,9 +19,9 @@ void updateInputBoolean(String entity_id, bool state, bool isOnline, WiFiClient&
   int httpCode = http.POST(payload);  // Use POST for services!
   
   if (httpCode == 200) {
-    Serial.println("✓ " + entity_id + " set to " + String(state ? "ON" : "OFF"));
+    Serial.println("OK " + entity_id + " set to " + String(state ? "ON" : "OFF"));
   } else {
-    Serial.println("✗ Failed: " + String(httpCode) + " for " + entity_id);
+    Serial.println("KO Failed: " + String(httpCode) + " for " + entity_id);
   }
   
   http.end();

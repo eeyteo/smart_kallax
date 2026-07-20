@@ -1,15 +1,16 @@
-# ESP32 Smart Kallax
+# Omnisensor V4R2
 
-Firmware for managing a cusom PCB, based on a ESP32 development boar.
-This board will manage motion detection from a mm wave sensor and will
-control a 12V output such as a led strip.
+Multi sentor with motion detection, temperature, humidity, biughtness.
+Easy integration with Home Assistant via RestAPI. Dedicated web interface for update and
+debug.
 This is a platformIO based project.
 
 ## Features
 
-- Soft turn on and turn off of a led output
-- mmWave LD2411S sensor support
-- integration with Home Assistant (get/set)
+- presence detection with mmWave technology
+- integration with Home Assistant (REST API get/set)
+- brightness
+- temperature and humidity 
 
 ## Usage
 
@@ -23,6 +24,7 @@ Add in folder src a `config.h` file with sensible information
 #pragma once
 #define SSID "your ssid"
 #define PASSWORD "your password"
+#define TOKEN "your long lived token"
 #define HA_SERVER "your HA server ip address"
 #define NODE_IP "your node intended static ip address"
 #define DEFAULT_GATEWAY "your network default gateway"
@@ -31,13 +33,30 @@ The other configuration file is `node_config.h`, here you'll specify the node na
 
 You can find fabrication files on [my website](https://cortimatteo.it) and a video step by step guide [here](https://youtu.be/v1Ju4GubdEQ)
 
+
+## HA integration
+
+1. You need first to create an uniquie long lived token. Go to Profile → Security → Long
+Lived Access Token → Create Token. Paste in the config.h
+2. You need then to create the helper. Go to settings → Devices & Services → Helpers →  Create Helper → Toggle. 
+For instance for the motion state toggle the name of the toggle (and most importantly the Entity ID) must be: NODE_NAME_motion_state.
+If the NODE_NAME is omnisensor_v4r2_kitchen you will need to create 9 helpers
+2.1 omnisensor_v4r2_kitchen_motion
+2.2 
+
+
+
 ## Hardware
 
-1. LM2575-5 for generating 5V line
-2. IRLZ44N for managing the led strip
+1. LM2575-5 for 5V
+2. LM3575-ADJ for 3V3
 3. ESP32 development board
 4. Custom PCB
+5. Buttons
+6. Colored LEDs
+7. BH1750FV brightness sensor
+8. AH10 temperature and humidity SPI sensor 
+9. LD2411S mmwave sensor
 
 ## License
-
 MIT License

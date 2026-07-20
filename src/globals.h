@@ -1,5 +1,5 @@
 #ifndef FW_VERSION
-#define FW_VERSION 10
+#define FW_VERSION 12
 
 #define EEPROM_SIZE 1024
 #define TIMEOUT_SIREN 1200

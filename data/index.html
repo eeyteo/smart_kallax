@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Assistant Configuration Guide - OmnisensorV4R1</title>
+    <link rel="stylesheet" href="style.css?v=2" />
+</head>
+<body>
+    <h1>OmnisensorV4R2 User Guide</h1>
+    <p>This page provides the information of the node, and will guide you through the configuration needed to integrate your OmnisensorV4R1 with Home Assistant.</p>
+
+    <div id="content" class="loading">Loading configuration...</div>
+     <!-- Button to go to the update page -->
+    <div class="container" style="border-block-end: none">
+        <a href="updatePage.html" class="btn" id="updatePageBtn"
+        >Go to Update page</a>
+    </div>
+
+    <script>
+        let webVersion = "unknown";
+
+        async function fetchWebVersion() {
+            try {
+                const response = await fetch("/web_version.json");
+                const data = await response.json();
+                webVersion = data.web_version || "unknown";
+            } catch (error) {
+                webVersion = "unknown";
+                console.error("Unable to load web version:", error);
+            }
+        }
+
+        async function initPage() {
+            await fetchWebVersion();
+            await loadConfig();
+        }
+
+        window.onload = initPage;
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/getConfig');
+                const config = await response.json();
+                displayConfig(config);
+            } catch (error) {
+                document.getElementById('content').innerHTML = '<p>Error loading configuration. Please refresh the page.</p>';
+                console.error('Error fetching config:', error);
+            }
+        }
+
+        function displayConfig(config) {
+            const nodeName = config.nodeName;
+            const inputs = config.inputs || [];
+
+            let html = '<div class="section"><h2>Current Configuration</h2>';
+            html += '<p><strong>Node Name:</strong> ' + nodeName + '</p>';
+            html += '<p><strong>Node Display Name:</strong> ' + config.nodeDisplayName + '</p>';
+            html += '<p><strong>IP Address:</strong> ' + config.IP_address + '</p>';
+            html += '<p><strong>FW Version:</strong> ' + config.FW_version + '</p>';
+            html += '<p><strong>Web Version:</strong> ' + webVersion + '</p>';
+            html += '<p><strong>Motion Ranges:</strong></p>';
+            html += '<ul>';
+            html += '<li>Max Motion Range: ' + config.maxMotionRange + '</li>';
+            html += '<li>Min Motion Range: ' + config.minMotionRange + '</li>';
+            html += '<li>Max Micro Motion Range: ' + config.maxMicroMotionRange + '</li>';
+            html += '<li>Min Micro Motion Range: ' + config.minMicroMotionRange + '</li>';
+            html += '<li>No One Waiting Time: ' + config.noOneWaitingTime + '</li>';
+            html += '</ul>';
+            html += '<p><strong>Inputs:</strong></p>';
+            html += '<ul>';
+            inputs.forEach(input => {
+                html += '<li>' + input.name + ' (GPIO ' + input.gpio + ')</li>';
+            });
+            html += '</ul></div>';
+
+            // Home Assistant integration instructions
+            // Input Boolean section
+            html += '<div class="section"><h2>1. Add to configuration.yaml, section input_boolean</h2>';
+            html += '<p>Add the following under the <code>input_boolean:</code> section:</p>';
+            html += '<pre>input_boolean:\n';
+            html += '  # ' + nodeName + '\n';
+            html += '  ' + nodeName + '_motion_state:\n';
+            html += '    name: "' + nodeName + ' Motion"\n';
+            html += '    icon: mdi:motion-sensor\n';
+            inputs.forEach(input => {
+                html += '  ' + nodeName + '_' + input.name + ':\n';
+                html += '    name: "' + nodeName + ' ' + input.name.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) + '"\n';
+                html += '    icon: mdi:gesture-tap-button\n';
+            });
+            html += '</pre></div>';
+
+            // Template section
+            html += '<div class="section"><h2>2. Add to configuration.yaml, section template</h2>';
+            html += '<p>Add the following under the <code>template:</code> section:</p>';
+            html += '<pre>template:\n';
+            html += '  # ' + nodeName + '\n';
+            html += '- binary_sensor:\n';
+            html += '  - device_class: motion\n';
+            html += '    default_entity_id: binary_sensor.' + nodeName + '_motion\n';
+            html += '    name: ' + nodeName + ' Motion\n';
+            html += '    state: \'{{ is_state("input_boolean.' + nodeName + '_motion_state", "on") }}\'\n';
+            inputs.forEach(input => {
+                html += '- binary_sensor:\n';
+                html += '  - device_class: power\n';
+                html += '    default_entity_id: binary_sensor.' + nodeName + '_' + input.name + '\n';
+                html += '    name: ' + nodeName + ' ' + input.name.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) + '\n';
+                html += '    state: \'{{ is_state("input_boolean.' + nodeName + '_' + input.name + '", "on") }}\'\n';
+            });
+            html += '</pre></div>';
+
+            // mmWave parameters section
+            html += '<div class="section"><h2>3. mmWave Parameters</h2>';
+            html += '<p>The following parameters can be adjusted in the node configuration:</p>';
+            html += '<ul>';
+            html += '<li>Max Motion Range: ' + config.maxMotionRange + '</li>';
+            html += '<li>Min Motion Range: ' + config.minMotionRange + '</li>';
+            html += '<li>Max Micro Motion Range: ' + config.maxMicroMotionRange + '</li>';
+            html += '<li>Min Micro Motion Range: ' + config.minMicroMotionRange + '</li>';
+            html += '<li>No One Waiting Time: ' + config.noOneWaitingTime + '</li>';
+            html += '</ul></div>';
+            html += '<p>Add to configuration.yaml, in the section rest_command.</p>';
+            html += '<pre>rest_command:\n  ' + config.nodeName + '_sensor_param:\n    url: "http://' + config.IP_address + '/command"\n    method: POST\n    content_type: "application/x-www-form-urlencoded"\n    payload: "command=param&param={{ param }}&value={{ value }}"\n\n</pre>';
+            
+            html += '<p>Add to configuration.yaml, in the section input_number.</p>';
+            html += '<pre>input_number:\n  ' + config.nodeName + '_max_motion_range:\n    name: "' + config.nodeDisplayName + ' Max Motion Range"\n    min: 30\n    max: 717\n    step: 1\n    initial: 215\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_min_motion_range:\n    name: "' + config.nodeDisplayName + ' Min Motion Range"\n    min: 30\n    max: 717\n    step: 1\n    initial: 33\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_max_micro_motion_range:\n    name: "' + config.nodeDisplayName + ' Max Micro Motion Range"\n    min: 30\n    max: 425\n    step: 1\n    initial: 215\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_min_micro_motion_range:\n    name: "' + config.nodeDisplayName + ' Min Micro Motion Range"\n    min: 30\n    max: 425\n    step: 1\n    initial: 33\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_no_one_waiting_time:\n    name: "' + config.nodeDisplayName + ' No One Waiting Time"\n    min: 0\n    max: 300\n    step: 1\n    initial: 30\n    unit_of_measurement: "ds"\n</pre>';
+            
+
+            // In settings, reload Home Assistant
+            html += '<div class="section"><h2>4. Reload Home Assistant</h2>';
+            html += '<p>After adding the above configurations, go to <strong>Settings &gt; Server Controls</strong> in Home Assistant and click on <strong>Reload Core</strong> to apply the changes.</p>'; 
+            
+            // How to utilize the entities in Home Assistant
+            html += '<div class="section"><h2>5. Utilizing the Entities in Home Assistant</h2>';
+            html += '<p>Once the configuration is reloaded, you can use the newly created entities in your automations, scripts, and dashboards. For example, you can create an automation that turns on a light when motion is detected:</p>';
+            html += '<p>You will find the entities in settings - device & services - entities.</p>';
+            
+            // Automations setup
+            html += '<div class="section"><h2>6. Automation Setup</h2>';
+            html += '<p>To automate the parameter changes, we must create automations in Home Assistant that triggers when the input_number values change. Add the following automations to your <code>automations.yaml</code> file:</p>';    
+            // 1. Max Motion Range
+            html += '<pre>- id: \'' + config.nodeName + '_set_max_motion_range\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' Set max motion range\n' +
+            '  description: "This automation updates the mmwave parameter on the device ' + config.nodeDisplayName + '"\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_number.' + config.nodeName + '_max_motion_range\n' +
+            '      trigger: state\n' +
+            '  conditions: []\n' +
+            '  actions:\n' +
+            '    - data:\n' +
+            '        param: maxMotionRange\n' +
+            '        value: "{{ states(\'input_number.' + config.nodeName + '_max_motion_range\') }}"\n' +
+            '      action: rest_command.' + config.nodeName + '_sensor_param\n' +
+            '  mode: single\n\n' +
+
+            // 2. Min Motion Range
+            '- id: \'' + config.nodeName + '_set_min_motion_range\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' Set min motion range\n' +
+            '  description: "This automation updates the mmwave parameter on the device ' + config.nodeDisplayName + '"\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_number.' + config.nodeName + '_min_motion_range\n' +
+            '      trigger: state\n' +
+            '  conditions: []\n' +
+            '  actions:\n' +
+            '    - data:\n' +
+            '        param: minMotionRange\n' +
+            '        value: "{{ states(\'input_number.' + config.nodeName + '_min_motion_range\') }}"\n' +
+            '      action: rest_command.' + config.nodeName + '_sensor_param\n' +
+            '  mode: single\n\n' +
+
+            // 3. Max Micro Motion Range
+            '- id: \'' + config.nodeName + '_set_max_micro_motion_range\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' Set max micro motion range\n' +
+            '  description: "This automation updates the mmwave parameter on the device ' + config.nodeDisplayName + '"\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_number.' + config.nodeName + '_max_micro_motion_range\n' +
+            '      trigger: state\n' +
+            '  conditions: []\n' +
+            '  actions:\n' +
+            '    - data:\n' +
+            '        param: maxMicroMotionRange\n' +
+            '        value: "{{ states(\'input_number.' + config.nodeName + '_max_micro_motion_range\') }}"\n' +
+            '      action: rest_command.' + config.nodeName + '_sensor_param\n' +
+            '  mode: single\n\n' +
+
+            // 4. Min Micro Motion Range
+            '- id: \'' + config.nodeName + '_set_min_micro_motion_range\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' Set min micro motion range\n' +
+            '  description: "This automation updates the mmwave parameter on the device ' + config.nodeDisplayName + '"\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_number.' + config.nodeName + '_min_micro_motion_range\n' +
+            '      trigger: state\n' +
+            '  conditions: []\n' +
+            '  actions:\n' +
+            '    - data:\n' +
+            '        param: minMicroMotionRange\n' +
+            '        value: "{{ states(\'input_number.' + config.nodeName + '_min_micro_motion_range\') }}"\n' +
+            '      action: rest_command.' + config.nodeName + '_sensor_param\n' +
+            '  mode: single\n\n' +
+
+            // 5. No One Waiting Time
+            '- id: \'' + config.nodeName + '_set_no_one_waiting_time\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' Set no one waiting time\n' +
+            '  description: "This automation updates the mmwave parameter on the device ' + config.nodeDisplayName + '"\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_number.' + config.nodeName + '_no_one_waiting_time\n' +
+            '      trigger: state\n' +
+            '  conditions: []\n' +
+            '  actions:\n' +
+            '    - data:\n' +
+            '        param: noOneWaitingTime\n' +
+            '        value: "{{ states(\'input_number.' + config.nodeName + '_no_one_waiting_time\') }}"\n' +
+            '      action: rest_command.' + config.nodeName + '_sensor_param\n' +
+            '  mode: single</pre>';
+
+            // Execute a quick reload
+            html += '<div class="section"><h2>7. Quick Reload</h2>';
+            html += '<p>After adding the automations, go to <strong>Settings &gt; System</strong> in Home Assistant and click on <strong>Quick Reload</strong> to apply the changes.</p></div>';
+
+            
+            document.getElementById('content').innerHTML = html;
+        }
+
+        window.onload = loadConfig;
+    </script>
+</body>
+</html>

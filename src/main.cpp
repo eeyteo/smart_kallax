@@ -1,8 +1,8 @@
 
 #include <WiFi.h>
+#include <LittleFS.h>
 #include <WebServer.h>
 #include "mmwave.h"
-#include "led_control.h"
 #include <Arduino.h>
 #include "config.h"
 #include "globals.h"
@@ -13,31 +13,33 @@
 #include "node_config.h"
 #include "rest_api.h"
 #include "inputs.h"
+#include "manageWeb.h"
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
+#include "endpoints.h"
 
 #define INTERVAL_MS 100
 
 // Inputs
-InputObj redButton("red_button", RED_BTN, 0, 0, false, 500);
-InputObj greenButton("green_button", GREEN_BTN, 0, 1, false, 500);
-InputObj blueButton("blue_button", BLUE_BTN, 0, 2, false, 500);
-InputObj whiteButton("white_button", WHITE_BTN, 0, 3, false, 500);
-
-// Node Variable
-const bool led_present = true; // set to true if an led strip is connected to the board
+InputObj redButton("red_button", RED_BTN, 0, 0, false, true, 500);
+InputObj greenButton("green_button", GREEN_BTN, 0, 1, false, true, 500);
+InputObj blueButton("blue_button", BLUE_BTN, 0, 2, false, true, 500);
+InputObj whiteButton("white_button", WHITE_BTN, 0, 3, false, true, 500);
 
 
-bool manualMode = false; 
-bool ledState = false, lastLedState = false; // used in manual mode to store the desired led state
+int uartIndex = 1; // default UART index for mmWave sensor
+int gpioRX = 16; // default GPIO for mmWave UART RX
+int gpioTX = 17; // default GPIO for mmWave UART TX
 bool notified = false;
+bool lastPresence = false;
 String macAddress = "";
 String ssid = SSID;
 String password = PASSWORD;
 bool is_online = false, old_manualMode;
 WebServer server(80);
 HardwareSerial ld2411Serial(2); // use UART2
-
+File uploadFile;
 mmWaveSensor mmWave; // instance of mmWaveSensor
-ledStrip myLedStrip; // instance of ledStrip
 WiFiClient espClient;      
 
 HTTPClient http;
@@ -46,11 +48,11 @@ int64_t current_time = 0, old_time = 0;
 
 
 //Function prototypes
-
 void handleNotFound(); 
 void handleRoot(); 
 void handleCommand(); 
 void setupWebServer();
+void handleFileUpload();
 
 
 void setup() {
@@ -62,25 +64,11 @@ void setup() {
     Serial.println("ID: " + String(NODE_NAME));
     Serial.println("========================================");
 
-
-  int uartIndex = -1;
-  int gpio = 16; // default GPIO for mmWave UART RX
-  // Initialize LED strip if the led strip is present
-  if(led_present) myLedStrip.begin(PWM_CHANNEL, LED_PIN, PWM_FREQ, PWM_RES);
-
   // Initialize mmWave sensor
-  // find the first non burned UART
-  for (int j = 0; j < 2; j++) { // only 2 HardwareSerial available
-      if (!availableUARTs[j].burned) {
-          uartIndex = j;
-            availableUARTs[j].burned = true; // mark as burned
-          break;
-      }
-  }
-  mmWave = mmWaveSensor(availableUARTs[uartIndex].serialPort, gpio, gpio + 1);
+  mmWave = mmWaveSensor(availableUARTs[uartIndex].serialPort, gpioRX, gpioTX);
   initMMWaveSensor(mmWave);
   Serial.printf("Initialized mmWave sensor with UART%d (RX:%d, TX:%d)\n", 
-              uartIndex + 1, gpio, gpio + 1);
+              uartIndex + 1, gpioRX, gpioTX);
   int attempts = 0;
   
   // Setup inputs
@@ -116,7 +104,15 @@ void setup() {
     // Wi-Fi credentials available and connection successful
     macAddress = WiFi.macAddress();
     Serial.println("Device " + macAddress + " connected at "  + WiFi.localIP().toString() + " . RSSI: " + String(WiFi.RSSI()) + "dBm");  
-    setupWebServer(); // Setup web server routes
+
+    if (!SPIFFS.begin(true)) {   // true = format on fail
+      Serial.println("SPIFFS Mount Failed!");
+      return;
+    } else {
+      Serial.println("SPIFFS mounted successfully.");
+      setupWebServer(); // Setup web server routes
+    
+    }
     is_online = true;
   }
 }
@@ -138,32 +134,19 @@ void loop() {
     static bool oldPresence = false;
     
     // Auto mode: control LED based on presence
-    if (!manualMode) {
-      if (mmWave.presenceDetected && myLedStrip.canFadeIn()) {
-        myLedStrip.machine_state = 1; // start fade in
-        updateInputBoolean(buildEntityId("input_boolean", "motion_state"), 
-                      mmWave.presenceDetected, is_online, espClient, http);
-        Serial.println("Auto mode: Presence detected, turning LED ON");
-      } else if(!mmWave.presenceDetected && myLedStrip.canFadeOut()) {
-        myLedStrip.machine_state = 3; // start fade out
-        updateInputBoolean(buildEntityId("input_boolean", "motion_state"), 
-                      mmWave.presenceDetected, is_online, espClient, http);
-        Serial.println("Auto mode: No presence, turning LED OFF");
-      }
-    }
-    
-    // Manual mode: update LED state if changed
-    if (manualMode && ledState != lastLedState) {
-      Serial.println("Manual mode: Turning LED " + String(ledState ? "ON" : "OFF"));
-      if (ledState && myLedStrip.canFadeIn()) {
-        myLedStrip.machine_state = 1;
-      } else if(!ledState && myLedStrip.canFadeOut()) {
-        myLedStrip.machine_state = 3;
-      }
-      lastLedState = ledState;
-    }
+  
+    if (mmWave.presenceDetected != lastPresence) {
+    lastPresence = mmWave.presenceDetected;
 
-    if(led_present) manageLed(myLedStrip); // manage the led fading if the led is present
+    updateInputBoolean(
+        buildEntityId("input_boolean", "motion_state"),
+        lastPresence,
+        is_online,
+        espClient,
+        http
+    );
+}
+    
     server.handleClient();
   } 
 }
@@ -175,8 +158,11 @@ void handleNotFound() {
 }
 
 void handleRoot() {
-  server.send(200, "text/plain", "Living Room Sensor Running");
+  servePage(server, "index.html"); // Main page
+  Serial.println("Requested page index.html");
 }
+
+
 
 void handleCommand() {
   // This endpoint handles commands sent from Home Assistant to control the node
@@ -186,13 +172,7 @@ void handleCommand() {
     
     Serial.println("Received command: " + command + " = " + value);
     
-    if (command == "mode") {
-      manualMode = (value == "manual");
-      server.send(200, "text/plain", "OK");
-    } else if (command == "led") {
-      ledState = (value == "on");
-      server.send(200, "text/plain", "OK");
-    } else if (command == "param") {
+    if (command == "param") {
       // Handle parameter changes
       String param = server.arg("param");
       int intValue = value.toInt();
@@ -233,6 +213,121 @@ void setupWebServer() {
   server.begin();
   Serial.println("HTTP server started on port 80");
   Serial.println("Access it at: http://" + WiFi.localIP().toString());
+
+  // Endpoint to get JSON configuration
+  server.on("/getConfig", HTTP_GET, []() {
+    Serial.println("Requested /getConfig");
+    JsonDocument doc;
+    // Add node general information
+    doc["nodeName"] = NODE_NAME;
+    doc["nodeDisplayName"] = NODE_DISPLAY_NAME;
+    doc["IP_address"] = NODE_IP;
+    doc["FW_version"] = FW_VERSION;
+
+    // Populate the JSON document with the mmwave configuration values
+    doc["maxMotionRange"] = mmWave.maxMotionRange.value;
+    doc["minMotionRange"] = mmWave.minMotionRange.value;
+    doc["maxMicroMotionRange"] = mmWave.maxMicroMotionRange.value;
+    doc["minMicroMotionRange"] = mmWave.minMicroMotionRange.value;
+    doc["noOneWaitingTime"] = mmWave.noOneWaitingTime.value;
+
+    // Add inputs configuration
+    JsonArray inputs = doc.createNestedArray("inputs");
+    if(redButton.isPresent) {
+      JsonObject redBtn = inputs.createNestedObject();
+      redBtn["name"] = redButton.name;
+      redBtn["gpio"] = redButton.gpio;
+      redBtn["state"] = redButton.state;
+    }
+    if(greenButton.isPresent) {
+      JsonObject greenBtn = inputs.createNestedObject();
+      greenBtn["name"] = greenButton.name;
+      greenBtn["gpio"] = greenButton.gpio;
+      greenBtn["state"] = greenButton.state;
+    }
+    if(blueButton.isPresent) {
+      JsonObject blueBtn = inputs.createNestedObject();
+      blueBtn["name"] = blueButton.name;
+      blueBtn["gpio"] = blueButton.gpio;
+      blueBtn["state"] = blueButton.state;
+    }
+    if(whiteButton.isPresent) {
+      JsonObject whiteBtn = inputs.createNestedObject();
+      whiteBtn["name"] = whiteButton.name;
+      whiteBtn["gpio"] = whiteButton.gpio;
+      whiteBtn["state"] = whiteButton.state;
+    }
+
+    // Add global configuration
+    doc["nodeName"] = NODE_NAME;
+
+    String json;
+    serializeJson(doc, json);
+    server.send(200, "application/json", json);
+  });
+
+  // Enpoint for the update page
+  server.on("/updatePage.html", []() {
+        servePage(server, "updatePage.html"); // Update page
+        Serial.println("Requested page updatePage.html");
+  });
+
+  // Set up firmware update endpoint
+  handleFirmwareUpdate(server);
+
+  // Endpoint the updating of the data folder
+  server.on("/updateDataFiles", HTTP_POST, []() {
+    server.send(200, "text/plain", "File upload successful");
+  }, handleFileUpload);
+
+  // Route for serving CSS
+  server.on("/style.css", []() {
+      File file = SPIFFS.open("/style.css", "r");
+      if (!file) {
+          Serial.println("Failed to open style.css for reading");
+          return;
+      }
+      server.streamFile(file, "text/css");
+        
+      file.close();
+  });
+
+  
+  // Enpoint for the web version
+  server.on("/web_version.json", []() {
+      File file = SPIFFS.open("/web_version.json", "r");
+      if (!file) {
+          Serial.println("Failed to open web_version.json for reading");
+          return;
+      }
+      server.streamFile(file, "application/json");
+        
+      file.close();
+  });
+
+
 }
 
-
+// Handle file upload
+void handleFileUpload() {
+  HTTPUpload& upload = server.upload();
+    
+  if (upload.status == UPLOAD_FILE_START) {
+    Serial.printf("Start uploading: %s\n", upload.filename.c_str());
+    uploadFile = SPIFFS.open("/" + upload.filename, FILE_WRITE);
+    if (!uploadFile) {
+      Serial.println("Failed to open file for writing");
+      return;
+    }
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) {
+      uploadFile.write(upload.buf, upload.currentSize);
+      Serial.printf("Writing %d bytes\n", upload.currentSize);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (uploadFile) {
+      uploadFile.close();
+      Serial.printf("Upload complete: %s, Size: %u\n", upload.filename.c_str(), upload.totalSize);
+    }
+  }
+}

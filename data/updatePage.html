@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title> Omnisensor - Updates</title>
+    <link rel="stylesheet" href="style.css?v=2" />
+    <link rel="icon" href="" />
+  </head>
+  <body>
+    <div class="layout">
+      <div class="intro">
+        <h1>Alarm manager - Updates</h1>
+        <button
+          class="btn"
+          id="toggle-light-theme"
+          aria-pressed="false"
+          aria-label="Toggle light mode"
+        >
+          Toggle theme
+        </button>
+      </div>
+
+      <div class="sidebar">
+        <h2>Current node</h2>
+        <nav>
+          <a href="/" class="btn btn-current" id="current-node-btn"
+            >Current node</a
+          >
+        </nav>
+      </div>
+
+      <main>
+        <h2 class="sr-only" id="current-node">Current node</h2>
+
+        <div class="container">
+          <h3 class="heading">Firmware</h3>
+
+          <form
+            class="column"
+            method="POST"
+            action="/update"
+            enctype="multipart/form-data"
+          >
+            <label for="firmware">
+              Select the <code class="highlight">.bin</code> file with
+              <code class="highlight">ESP32</code>.
+            </label>
+            <input
+              class="btn"
+              type="file"
+              name="firmware"
+              id="firmware"
+              accept=".bin"
+              required
+            />
+            <button class="btn">Upload</button>
+          </form>
+        </div>
+
+        <div class="container">
+          <h3 class="heading">Data files</h3>
+
+          <form
+            class="column"
+            method="POST"
+            action="/updateDataFiles"
+            enctype="multipart/form-data"
+          >
+            <label for="file">
+              Select <code class="highlight">.html</code>,
+              <code class="highlight">.css</code> and
+              <code class="highlight">.json</code> files from the
+              <strong>data</strong> folder.
+            </label>
+
+            <input class="btn" type="file" name="file" id="file" multiple />
+            <button class="btn">Upload</button>
+          </form>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      // Get the 'go_to' parameter from the URL
+      const params = new URLSearchParams(window.location.search);
+      const goTo = params.get("go_to");
+      const nodeName = params.get("current_node");
+
+      const currentNodeBtn = document.getElementById("current-node-btn");
+
+      if (nodeName) {
+        document.getElementById("current-node").textContent = nodeName;
+        currentNodeBtn.textContent = nodeName;
+      }
+
+      if (goTo) {
+        currentNodeBtn.href = goTo;
+      }
+
+      document
+        .getElementById("toggle-light-theme")
+        .addEventListener("click", function () {
+          const pressed = this.getAttribute("aria-pressed") === "true";
+          this.setAttribute("aria-pressed", pressed ? "false" : "true");
+          document.documentElement.setAttribute(
+            "data-theme",
+            pressed ? "dark" : "light"
+          );
+        });
+    </script>
+  </body>
+</html>
