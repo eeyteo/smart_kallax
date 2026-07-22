@@ -38,13 +38,8 @@ You can find fabrication files on [my website](https://cortimatteo.it) and a vid
 
 1. You need first to create an uniquie long lived token. Go to Profile → Security → Long
 Lived Access Token → Create Token. Paste in the config.h
-2. You need then to create the helper. Go to settings → Devices & Services → Helpers →  Create Helper → Toggle. 
-For instance for the motion state toggle the name of the toggle (and most importantly the Entity ID) must be: NODE_NAME_motion_state.
-If the NODE_NAME is omnisensor_v4r2_kitchen you will need to create 9 helpers
-2.1 omnisensor_v4r2_kitchen_motion
-2.2 
-
-
+2. After flashing the firmware and uploading the data file, you will be able to visit the node at it's address (specified in config.h).
+There you will find detailed instructions on how to integrate the OmnisensorV4R2 on HomeAssistant
 
 ## Hardware
 
@@ -54,7 +49,7 @@ If the NODE_NAME is omnisensor_v4r2_kitchen you will need to create 9 helpers
 4. Custom PCB
 5. Buttons
 6. Colored LEDs
-7. BH1750FV brightness sensor
+7. TSL2561 brightness SPI sensor
 8. AH10 temperature and humidity SPI sensor 
 9. LD2411S mmwave sensor
 
