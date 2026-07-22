@@ -17,14 +17,21 @@
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 #include "endpoints.h"
+#include "outputs.h"
+#include "sensors.h"
 
 #define INTERVAL_MS 100
+#define INTERVAL_MID 30000
 
 // Inputs
 InputObj redButton("red_button", RED_BTN, 0, 0, false, true, 500);
 InputObj greenButton("green_button", GREEN_BTN, 0, 1, false, true, 500);
 InputObj blueButton("blue_button", BLUE_BTN, 0, 2, false, true, 500);
 InputObj whiteButton("white_button", WHITE_BTN, 0, 3, false, true, 500);
+OutputObj redLED("red_led", LED_RED_PIN, false, true);
+OutputObj greenLED("green_led", LED_GREEN_PIN, false, true);
+OutputObj blueLED("blue_led", LED_BLUE_PIN, false, true);
+OutputObj whiteLED("white_led", LED_WHITE_PIN, false, true);
 
 
 int uartIndex = 1; // default UART index for mmWave sensor
@@ -35,7 +42,7 @@ bool lastPresence = false;
 String macAddress = "";
 String ssid = SSID;
 String password = PASSWORD;
-bool is_online = false, old_manualMode;
+bool is_online = false;
 WebServer server(80);
 HardwareSerial ld2411Serial(2); // use UART2
 File uploadFile;
@@ -44,8 +51,10 @@ WiFiClient espClient;
 
 HTTPClient http;
 
-int64_t current_time = 0, old_time = 0;
+int64_t current_time = 0, old_time = 0, old_time_mid = 0; // for timing loops
 
+tempSensObj tempSensor; 
+lightSensObj lightSensor; 
 
 //Function prototypes
 void handleNotFound(); 
@@ -69,14 +78,24 @@ void setup() {
   initMMWaveSensor(mmWave);
   Serial.printf("Initialized mmWave sensor with UART%d (RX:%d, TX:%d)\n", 
               uartIndex + 1, gpioRX, gpioTX);
-  int attempts = 0;
+  // Setup ambient sensors
+  tempSensor = tempSensObj("temp_humidity_sensor");
+  lightSensor = lightSensObj("light_sensor");
+  tempSensor.setup();
+  lightSensor.setup();
   
   // Setup inputs
   setupInputs(redButton, greenButton, blueButton, whiteButton);
+  // Setup outputs
+  redLED.setup();
+  greenLED.setup();
+  blueLED.setup();
+  whiteLED.setup();
 
   // Connect to Wi-Fi
   IPAddress local_IP;
   IPAddress gateway;
+  int attempts = 0;
   int a, b, c, d, e, f, g, h;  // use int for sscanf
     if (sscanf(NODE_IP, "%d.%d.%d.%d", &a, &b, &c, &d) == 4) {
         local_IP = IPAddress((uint8_t)a, (uint8_t)b, (uint8_t)c, (uint8_t)d);
@@ -119,6 +138,52 @@ void setup() {
 
 void loop() {
   current_time = esp_timer_get_time()/1000; // Convert to milliseconds
+
+  // mid loop
+  if(current_time - old_time_mid >= INTERVAL_MID) {
+    old_time_mid = current_time;
+    // Check Wi-Fi connection
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi disconnected. Attempting to reconnect...");
+      WiFi.reconnect();
+      delay(1000); // Wait a bit before checking again
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("Reconnected to WiFi.");
+        is_online = true;
+      } else {
+        Serial.println("Failed to reconnect to WiFi.");
+        is_online = false;
+      }
+    }
+
+    // Update ambient sensors data
+    lightSensor.updateData();
+    tempSensor.updateData();
+    // post data to Home Assistant
+    updateInputNumber(
+        buildEntityId("input_number", "temperature"),
+        tempSensor.getTemperature(),
+        is_online,
+        espClient,
+        http
+    );
+    updateInputNumber(
+        buildEntityId("input_number", "humidity"),
+        tempSensor.getHumidity(),
+        is_online,
+        espClient,
+        http
+    );
+    updateInputNumber(
+        buildEntityId("input_number", "light_level"),
+        lightSensor.getLightLevel(),
+        is_online,
+        espClient,
+        http
+    );
+
+  }
+
   // 100ms loop
   if(current_time - old_time >= INTERVAL_MS ) {    
     old_time = current_time;
@@ -198,7 +263,21 @@ void handleCommand() {
         setNoOneWaitingTime(mmWave, mmWave.noOneWaitingTime.value);
       }
       server.send(200, "text/plain", "OK");
-    } else {
+    }else if(command == "led") {
+      // Handle LEDs control
+      String ledColor = server.arg("color");
+      bool ledState = (value == "on");
+      if(ledColor == "red") {
+        redLED.updateState(ledState);
+      } else if(ledColor == "green") {
+        greenLED.updateState(ledState);
+      } else if(ledColor == "blue") {
+        blueLED.updateState(ledState);
+      } else if(ledColor == "white") {
+        whiteLED.updateState(ledState);
+      }
+      server.send(200, "text/plain", "OK");
+    }else{
       server.send(400, "text/plain", "Unknown command");
     }
   }
@@ -292,7 +371,7 @@ void setupWebServer() {
       file.close();
   });
 
-  
+
   // Enpoint for the web version
   server.on("/web_version.json", []() {
       File file = SPIFFS.open("/web_version.json", "r");

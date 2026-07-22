@@ -107,6 +107,22 @@
                 html += '    name: ' + nodeName + ' ' + input.name.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) + '\n';
                 html += '    state: \'{{ is_state("input_boolean.' + nodeName + '_' + input.name + '", "on") }}\'\n';
             });
+            html += '- sensor:\n';
+            html += '  - device_class: temperature\n';
+            html += '    default_entity_id: sensor.' + nodeName + '_temperature\n';
+            html += '    name: ' + nodeName + ' Temperature\n';
+            html += '    state: "{{ states(\'input_number.' + nodeName + '_temperature\') }}"\n';
+            html += '    unit_of_measurement: "°C"\n';
+            html += '  - device_class: humidity\n';
+            html += '    default_entity_id: sensor.' + nodeName + '_humidity\n';
+            html += '    name: ' + nodeName + ' Humidity\n';
+            html += '    state: "{{ states(\'input_number.' + nodeName + '_humidity\') }}"\n';
+            html += '    unit_of_measurement: "%"\n';
+            html += '  - device_class: brightness\n';
+            html += '    default_entity_id: sensor.' + nodeName + '_brightness\n';
+            html += '    name: ' + nodeName + ' Brightness\n';
+            html += '    state: "{{ states(\'input_number.' + nodeName + '_brightness\') }}"\n';
+            html += '    unit_of_measurement: "lux"\n';
             html += '</pre></div>';
 
             // mmWave parameters section
@@ -123,20 +139,28 @@
             html += '<pre>rest_command:\n  ' + config.nodeName + '_sensor_param:\n    url: "http://' + config.IP_address + '/command"\n    method: POST\n    content_type: "application/x-www-form-urlencoded"\n    payload: "command=param&param={{ param }}&value={{ value }}"\n\n</pre>';
             
             html += '<p>Add to configuration.yaml, in the section input_number.</p>';
-            html += '<pre>input_number:\n  ' + config.nodeName + '_max_motion_range:\n    name: "' + config.nodeDisplayName + ' Max Motion Range"\n    min: 30\n    max: 717\n    step: 1\n    initial: 215\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_min_motion_range:\n    name: "' + config.nodeDisplayName + ' Min Motion Range"\n    min: 30\n    max: 717\n    step: 1\n    initial: 33\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_max_micro_motion_range:\n    name: "' + config.nodeDisplayName + ' Max Micro Motion Range"\n    min: 30\n    max: 425\n    step: 1\n    initial: 215\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_min_micro_motion_range:\n    name: "' + config.nodeDisplayName + ' Min Micro Motion Range"\n    min: 30\n    max: 425\n    step: 1\n    initial: 33\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_no_one_waiting_time:\n    name: "' + config.nodeDisplayName + ' No One Waiting Time"\n    min: 0\n    max: 300\n    step: 1\n    initial: 30\n    unit_of_measurement: "ds"\n</pre>';
+            html += '<pre>input_number:\n  ' + config.nodeName + '_max_motion_range:\n    name: "' + config.nodeDisplayName + ' Max Motion Range"\n    min: 30\n    max: 717\n    step: 1\n    initial: 215\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_min_motion_range:\n    name: "' + config.nodeDisplayName + ' Min Motion Range"\n    min: 30\n    max: 717\n    step: 1\n    initial: 33\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_max_micro_motion_range:\n    name: "' + config.nodeDisplayName + ' Max Micro Motion Range"\n    min: 30\n    max: 425\n    step: 1\n    initial: 215\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_min_micro_motion_range:\n    name: "' + config.nodeDisplayName + ' Min Micro Motion Range"\n    min: 30\n    max: 425\n    step: 1\n    initial: 33\n    unit_of_measurement: "cm"\n\n  ' + config.nodeName + '_no_one_waiting_time:\n    name: "' + config.nodeDisplayName + ' No One Waiting Time"\n    min: 0\n    max: 300\n    step: 1\n    initial: 30\n    unit_of_measurement: "ds"\n\n  ' + config.nodeName + '_temperature:\n    name: "' + config.nodeDisplayName + ' Temperature"\n    min: -40\n    max: 80\n    step: 0.1\n    initial: 20\n    unit_of_measurement: "°C"\n\n  ' + config.nodeName + '_humidity:\n    name: "' + config.nodeDisplayName + ' Humidity"\n    min: 0\n    max: 100\n    step: 0.1\n    initial: 50\n    unit_of_measurement: "%"\n</pre>';
+            
+            html += '<div class="section"><h2>4. LED control</h2>';
+            html += '<p>The firmware accepts <code>command=led</code> together with <code>color=red|green|blue|white</code> and <code>value=on|off</code>.</p>';
+            html += '<p>Add to configuration.yaml, in the section rest_command.</p>';
+            html += '<pre>rest_command:\n  ' + config.nodeName + '_led_red:\n    url: "http://' + config.IP_address + '/command"\n    method: POST\n    content_type: "application/x-www-form-urlencoded"\n    payload: "command=led&color=red&value={{ value }}"\n\n  ' + config.nodeName + '_led_green:\n    url: "http://' + config.IP_address + '/command"\n    method: POST\n    content_type: "application/x-www-form-urlencoded"\n    payload: "command=led&color=green&value={{ value }}"\n\n  ' + config.nodeName + '_led_blue:\n    url: "http://' + config.IP_address + '/command"\n    method: POST\n    content_type: "application/x-www-form-urlencoded"\n    payload: "command=led&color=blue&value={{ value }}"\n\n  ' + config.nodeName + '_led_white:\n    url: "http://' + config.IP_address + '/command"\n    method: POST\n    content_type: "application/x-www-form-urlencoded"\n    payload: "command=led&color=white&value={{ value }}"\n</pre>';
+            html += '<p>Add to configuration.yaml, in the section input_boolean.</p>';
+            html += '<pre>input_boolean:\n  ' + config.nodeName + '_red_led:\n    name: "' + config.nodeDisplayName + ' Red LED"\n    icon: mdi:led-outline\n\n  ' + config.nodeName + '_green_led:\n    name: "' + config.nodeDisplayName + ' Green LED"\n    icon: mdi:led-outline\n\n  ' + config.nodeName + '_blue_led:\n    name: "' + config.nodeDisplayName + ' Blue LED"\n    icon: mdi:led-outline\n\n  ' + config.nodeName + '_white_led:\n    name: "' + config.nodeDisplayName + ' White LED"\n    icon: mdi:led-outline\n</pre>';
+            html += '<p>You can then trigger each service from automations or scripts to turn the corresponding LED on or off.</p>';
             
 
             // In settings, reload Home Assistant
-            html += '<div class="section"><h2>4. Reload Home Assistant</h2>';
+            html += '<div class="section"><h2>5. Reload Home Assistant</h2>';
             html += '<p>After adding the above configurations, go to <strong>Settings &gt; Server Controls</strong> in Home Assistant and click on <strong>Reload Core</strong> to apply the changes.</p>'; 
             
             // How to utilize the entities in Home Assistant
-            html += '<div class="section"><h2>5. Utilizing the Entities in Home Assistant</h2>';
+            html += '<div class="section"><h2>6. Utilizing the Entities in Home Assistant</h2>';
             html += '<p>Once the configuration is reloaded, you can use the newly created entities in your automations, scripts, and dashboards. For example, you can create an automation that turns on a light when motion is detected:</p>';
             html += '<p>You will find the entities in settings - device & services - entities.</p>';
             
             // Automations setup
-            html += '<div class="section"><h2>6. Automation Setup</h2>';
+            html += '<div class="section"><h2>7. Automation Setup</h2>';
             html += '<p>To automate the parameter changes, we must create automations in Home Assistant that triggers when the input_number values change. Add the following automations to your <code>automations.yaml</code> file:</p>';    
             // 1. Max Motion Range
             html += '<pre>- id: \'' + config.nodeName + '_set_max_motion_range\'\n' +
@@ -213,15 +237,58 @@
             '      action: rest_command.' + config.nodeName + '_sensor_param\n' +
             '  mode: single</pre>';
 
+            html += '<div class="section"><h2>8. LED automations</h2>';
+            html += '<p>To make the LEDs respond to the Home Assistant toggles, add the following automations to your <code>automations.yaml</code> file:</p>';
+            html += '<pre>- id: \'' + config.nodeName + '_red_led_toggle\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' Red LED Toggle\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_boolean.' + config.nodeName + '_red_led\n' +
+            '      trigger: state\n' +
+            '  actions:\n' +
+            '    - service: rest_command.' + config.nodeName + '_led_red\n' +
+            '      data:\n' +
+            '        value: "{{ trigger.to_state.state }}"\n' +
+            '  mode: single\n\n' +
+            '- id: \'' + config.nodeName + '_green_led_toggle\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' Green LED Toggle\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_boolean.' + config.nodeName + '_green_led\n' +
+            '      trigger: state\n' +
+            '  actions:\n' +
+            '    - service: rest_command.' + config.nodeName + '_led_green\n' +
+            '      data:\n' +
+            '        value: "{{ trigger.to_state.state }}"\n' +
+            '  mode: single\n\n' +
+            '- id: \'' + config.nodeName + '_blue_led_toggle\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' Blue LED Toggle\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_boolean.' + config.nodeName + '_blue_led\n' +
+            '      trigger: state\n' +
+            '  actions:\n' +
+            '    - service: rest_command.' + config.nodeName + '_led_blue\n' +
+            '      data:\n' +
+            '        value: "{{ trigger.to_state.state }}"\n' +
+            '  mode: single\n\n' +
+            '- id: \'' + config.nodeName + '_white_led_toggle\'\n' +
+            '  alias: ' + config.nodeDisplayName + ' White LED Toggle\n' +
+            '  triggers:\n' +
+            '    - entity_id: input_boolean.' + config.nodeName + '_white_led\n' +
+            '      trigger: state\n' +
+            '  actions:\n' +
+            '    - service: rest_command.' + config.nodeName + '_led_white\n' +
+            '      data:\n' +
+            '        value: "{{ trigger.to_state.state }}"\n' +
+            '  mode: single</pre>';
+
             // Execute a quick reload
-            html += '<div class="section"><h2>7. Quick Reload</h2>';
+            html += '<div class="section"><h2>9. Quick Reload</h2>';
             html += '<p>After adding the automations, go to <strong>Settings &gt; System</strong> in Home Assistant and click on <strong>Quick Reload</strong> to apply the changes.</p></div>';
 
             
             document.getElementById('content').innerHTML = html;
         }
 
-        window.onload = loadConfig;
+        window.onload = initPage;
     </script>
 </body>
 </html>
