@@ -14,6 +14,7 @@ void updateInputNumber(String entity_id, float value, bool isOnline, WiFiClient&
   http.begin(espClient, url);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", "Bearer " + String(TOKEN));
+  http.setTimeout(2000);
   
   int httpCode = http.POST(payload);  // Use POST for services!
   
@@ -24,13 +25,14 @@ void updateInputNumber(String entity_id, float value, bool isOnline, WiFiClient&
   }
   
   http.end();
+  espClient.stop();  // Drop keep-alive connection to avoid stale client reuse
 }
 
 
-void updateInputBoolean(String entity_id, bool state, bool isOnline, WiFiClient& espClient, HTTPClient& http) {
+bool updateInputBoolean(String entity_id, bool state, bool isOnline, WiFiClient& espClient, HTTPClient& http) {
   // This function updates an input_boolean in Home Assistant via the REST API
 
-  if (!isOnline || WiFi.status() != WL_CONNECTED) return;
+  if (!isOnline || WiFi.status() != WL_CONNECTED) return false;
 
   // Use the service API, not states API
   String url = "http://" + String(HA_SERVER) + ":8123/api/services/input_boolean/turn_" + 
@@ -41,16 +43,21 @@ void updateInputBoolean(String entity_id, bool state, bool isOnline, WiFiClient&
   http.begin(espClient, url);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", "Bearer " + String(TOKEN));
+  http.setTimeout(2000);
   
   int httpCode = http.POST(payload);  // Use POST for services!
   
-  if (httpCode == 200) {
+  bool success = (httpCode == 200);
+  if (success) {
     Serial.println("OK " + entity_id + " set to " + String(state ? "ON" : "OFF"));
   } else {
     Serial.println("KO Failed: " + String(httpCode) + " for " + entity_id);
   }
   
   http.end();
+  espClient.stop();  // Drop keep-alive connection to avoid stale client reuse
+
+  return success;
 }
 
 

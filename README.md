@@ -14,7 +14,7 @@ This is a platformIO based project.
 
 ## Usage
 
-Include the complmentary libraries from this [complementary repository](https://github.com/eeyteo/ESP32_custom_libs), in the platformIO.ini file
+Include the complmentary library from this [complementary repository](https://github.com/eeyteo/ESP32_custom_libs), in the platformIO.ini file
 
 ```xml
 lib_extra_dirs = ..\PlatformIO\Libs

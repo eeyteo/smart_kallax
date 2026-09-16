@@ -3,5 +3,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
-
+deepseek.md
+.deep-copilot
 /src/config.h

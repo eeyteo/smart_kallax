@@ -7,7 +7,7 @@
 #include "globals.h"
 #include "node_config.h"
 
-void updateInputBoolean(String entity_id, bool state, bool isOnline, WiFiClient& espClient, HTTPClient& http);
+bool updateInputBoolean(String entity_id, bool state, bool isOnline, WiFiClient& espClient, HTTPClient& http);
 
 void updateInputNumber(String entity_id, float value, bool isOnline, WiFiClient& espClient, HTTPClient& http);
 

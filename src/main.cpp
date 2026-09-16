@@ -22,6 +22,7 @@
 
 #define INTERVAL_MS 100
 #define INTERVAL_MID 30000
+#define VERBOSE 1
 
 // Inputs
 InputObj redButton("red_button", RED_BTN, 0, 0, false, true, 500);
@@ -52,9 +53,8 @@ WiFiClient espClient;
 HTTPClient http;
 
 int64_t current_time = 0, old_time = 0, old_time_mid = 0; // for timing loops
-
-tempSensObj tempSensor; 
-lightSensObj lightSensor; 
+tempSensObj tempSensor("temp_humidity_sensor"); 
+lightSensObj lightSensor("light_sensor");
 
 //Function prototypes
 void handleNotFound(); 
@@ -78,9 +78,13 @@ void setup() {
   initMMWaveSensor(mmWave);
   Serial.printf("Initialized mmWave sensor with UART%d (RX:%d, TX:%d)\n", 
               uartIndex + 1, gpioRX, gpioTX);
+
+  // initialize and setup I2C sensors
+  Wire.begin(21, 22); 
+  Wire.setClock(100000);
+  delay(100);
+  //scanI2C(); // Scan for I2C devices
   // Setup ambient sensors
-  tempSensor = tempSensObj("temp_humidity_sensor");
-  lightSensor = lightSensObj("light_sensor");
   tempSensor.setup();
   lightSensor.setup();
   
@@ -137,7 +141,7 @@ void setup() {
 }
 
 void loop() {
-  current_time = esp_timer_get_time()/1000; // Convert to milliseconds
+  current_time = esp_timer_get_time()/1000; // Convert microseconds to milliseconds
 
   // mid loop
   if(current_time - old_time_mid >= INTERVAL_MID) {
@@ -159,6 +163,7 @@ void loop() {
     // Update ambient sensors data
     lightSensor.updateData();
     tempSensor.updateData();
+
     // post data to Home Assistant
     updateInputNumber(
         buildEntityId("input_number", "temperature"),
@@ -181,6 +186,14 @@ void loop() {
         espClient,
         http
     );
+    // Print results in the terminal
+    if(VERBOSE) {
+      Serial.println("Updated sensor data to Home Assistant:");
+      Serial.println("Temperature: " + String(tempSensor.getTemperature()) + "°C");
+      Serial.println("Humidity: " + String(tempSensor.getHumidity()) + "%");
+      Serial.println("Light Level: " + String(lightSensor.getLightLevel()));
+    }
+    
 
   }
 
@@ -190,7 +203,6 @@ void loop() {
     // Count time
     countDown(mmWave.t, notified);
 
-
     // Update inputs
     updateInputs(is_online, espClient, http, redButton, greenButton, blueButton, whiteButton);
     
@@ -198,7 +210,6 @@ void loop() {
     listenMMwave(mmWave); // Continuously listen to mmWave data
     static bool oldPresence = false;
     
-    // Auto mode: control LED based on presence
   
     if (mmWave.presenceDetected != lastPresence) {
     lastPresence = mmWave.presenceDetected;
@@ -216,8 +227,6 @@ void loop() {
   } 
 }
 
-
-
 void handleNotFound() {
   server.send(404, "application/json", "{\"status\":\"error\",\"message\":\"Not found\"}");
 }
@@ -226,7 +235,6 @@ void handleRoot() {
   servePage(server, "index.html"); // Main page
   Serial.println("Requested page index.html");
 }
-
 
 
 void handleCommand() {
@@ -343,6 +351,65 @@ void setupWebServer() {
     String json;
     serializeJson(doc, json);
     server.send(200, "application/json", json);
+  });
+
+  // Endpoint to get current sensor readings as JSON
+  server.on("/getReadings", HTTP_GET, []() {
+    Serial.println("Requested /getReadings");
+
+    // Refresh sensor data so the page always shows fresh values
+    tempSensor.updateData();
+    lightSensor.updateData();
+
+    JsonDocument doc;
+    doc["nodeName"] = NODE_NAME;
+    doc["nodeDisplayName"] = NODE_DISPLAY_NAME;
+    doc["fwVersion"] = FW_VERSION;
+    doc["rssi"] = WiFi.RSSI();
+
+    doc["temperature"] = tempSensor.getTemperature();
+    doc["humidity"] = tempSensor.getHumidity();
+    doc["lightLevel"] = lightSensor.getLightLevel();
+    doc["presence"] = mmWave.presenceDetected;
+    doc["distance"] = mmWave.distance;
+
+    JsonArray inputs = doc.createNestedArray("inputs");
+    JsonObject redBtn = inputs.createNestedObject();
+    redBtn["name"] = redButton.name;
+    redBtn["state"] = redButton.state;
+    JsonObject greenBtn = inputs.createNestedObject();
+    greenBtn["name"] = greenButton.name;
+    greenBtn["state"] = greenButton.state;
+    JsonObject blueBtn = inputs.createNestedObject();
+    blueBtn["name"] = blueButton.name;
+    blueBtn["state"] = blueButton.state;
+    JsonObject whiteBtn = inputs.createNestedObject();
+    whiteBtn["name"] = whiteButton.name;
+    whiteBtn["state"] = whiteButton.state;
+
+    JsonArray leds = doc.createNestedArray("leds");
+    JsonObject redLed = leds.createNestedObject();
+    redLed["name"] = redLED.name;
+    redLed["state"] = redLED.state;
+    JsonObject greenLed = leds.createNestedObject();
+    greenLed["name"] = greenLED.name;
+    greenLed["state"] = greenLED.state;
+    JsonObject blueLed = leds.createNestedObject();
+    blueLed["name"] = blueLED.name;
+    blueLed["state"] = blueLED.state;
+    JsonObject whiteLed = leds.createNestedObject();
+    whiteLed["name"] = whiteLED.name;
+    whiteLed["state"] = whiteLED.state;
+
+    String json;
+    serializeJson(doc, json);
+    server.send(200, "application/json", json);
+  });
+
+  // Endpoint for the live readings page
+  server.on("/readings.html", []() {
+        servePage(server, "readings.html");
+        Serial.println("Requested page readings.html");
   });
 
   // Enpoint for the update page
